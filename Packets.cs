@@ -6,6 +6,17 @@ using System.Threading.Tasks;
 
 namespace MarvelousAPI
 {
+    public struct Data_03_31XX_Structure
+    {
+        public byte BeaconAddress;
+        public byte MajorVersion;
+        public byte MinorVersion;
+        public byte SecondMinorVersion;
+        public byte DeviceType;
+        public bool DuplicatedAddress;
+        public bool SleepingMode;
+    }
+
     public struct Data_03_4110_Structure
     {
         public byte BeaconAddress;
@@ -353,6 +364,41 @@ namespace MarvelousAPI
         #endregion
     }
 
+    //answer on all beacons request
+    class Answer_03_31XX : IncomingPacket
+    {
+        #region Public
+        public UInt16 AccessMode { get { return PickBytes(4, 2); } }
+        public new byte DataLength { get { return PickBytes(2, 1); } }
+        public byte NumberOfDevices { get { return PickBytes(3, 1); } }
+        public Data_03_31XX_Structure[] DataStructure { get { return ParseDataStructure(); } }
+        public Answer_03_31XX(byte[] buffer) : base(buffer)
+        {
+
+        }
+        #endregion
+        #region Private
+        private Data_03_31XX_Structure[] ParseDataStructure()
+        {
+            Data_03_31XX_Structure[] beacon_info = new Data_03_31XX_Structure[16];
+            for (int i = 0; i < 16; i++)
+            {
+                if (buffer[4 + i * 7] != 0)
+                {
+                    beacon_info[i].BeaconAddress = buffer[4 + i * 7];
+                    beacon_info[i].DeviceType = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b00011111);
+                    beacon_info[i].DuplicatedAddress = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b01000000) == 0b01000000;
+                    beacon_info[i].SleepingMode = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b10000000) == 0b10000000;
+                    beacon_info[i].MajorVersion = buffer[5 + i * 7];
+                    beacon_info[i].MinorVersion = buffer[6 + i * 7];
+                    beacon_info[i].SecondMinorVersion = buffer[8 + i * 7];
+                }
+            }
+            return beacon_info;
+        }
+        #endregion
+    }
+
     //answer with error code
     class Answer_Error : IncomingPacket
     {
@@ -542,6 +588,39 @@ namespace MarvelousAPI
         {
             PacketType = 0x03;
             PacketCode = 0xfe00;
+            AccessMode = 0x0000;
+        }
+        #endregion
+    }
+
+    //get all available beacons in network, group number is the only arg
+    class Request_03_31XX : RequestPacket
+    {
+        #region Public
+        public byte GroupNumber { get; set; }
+        public override byte[] ToBuffer()
+        {
+            byte[] Buffer = new byte[]
+            {
+                DeviceAddress,
+                PacketType,
+                (byte)PacketCode,
+                (byte)(PacketCode >> 8),
+                (byte)AccessMode,
+                (byte)(AccessMode >> 8),
+                0xFF, //crc_b1
+                0xFF //crc_b2
+            };
+            CRC = CalculateCRC(Buffer);
+            Buffer[^2] = (byte)CRC;
+            Buffer[^1] = (byte)(CRC >> 8);
+            return Buffer;
+        }
+        public Request_03_31XX() : base() //GroupNumber is the only arg
+        {
+            DeviceAddress = 0xff;
+            PacketType = 0x03;
+            PacketCode = (UInt16)(0x3100 | (UInt16)GroupNumber);
             AccessMode = 0x0000;
         }
         #endregion

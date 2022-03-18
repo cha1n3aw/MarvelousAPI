@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO.Ports;
 using System.Linq;
 
@@ -21,17 +22,22 @@ namespace MarvelousAPI
             List<string> portsList = SerialPort.GetPortNames().ToList();
             return portsList;
         }
-        public void Open(string portName)
+        public bool Open(string portName)
         {
-            Port = new(portName)
+            try
             {
-                BaudRate = 500000,
-                Parity = Parity.None,
-                StopBits = StopBits.One,
-                DataBits = 8,
-                Handshake = Handshake.None
-            };
-            Port.Open();
+                Port = new(portName)
+                {
+                    BaudRate = 500000,
+                    Parity = Parity.None,
+                    StopBits = StopBits.One,
+                    DataBits = 8,
+                    Handshake = Handshake.None
+                };
+                Port.Open();
+                return true;
+            }
+            catch(Exception e) { return false; }
         }
         #endregion
     }

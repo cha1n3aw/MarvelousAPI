@@ -14,6 +14,7 @@ namespace MarvelousAPI
         public CoordinatesStructure_mm Coordinates_mm { get; set; }
         public bool isHedge { get; set; }
         public bool isAwake { get; set; }
+        public bool Exists { get; set; }
 
         public async Task GetFirmwareVersion(SerialPortConnection connection)
         {

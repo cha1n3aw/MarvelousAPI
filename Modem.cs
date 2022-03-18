@@ -33,6 +33,13 @@ namespace MarvelousAPI
             await Task.Delay(15000);
         }
 
+        public async Task GetAvailableBeacons(SerialPortConnection connection, byte groupnumber)
+        {
+            Request_03_31XX packet_03_31xx = new() { GroupNumber = groupnumber };
+            connection.Write(packet_03_31xx.ToBuffer());
+            await Task.Delay(15000);
+        }
+
         public Modem()
         {
             Beacons = new List<Beacon>();
@@ -42,7 +49,8 @@ namespace MarvelousAPI
                 Coordinates_mm = new CoordinatesStructure_mm { X = 0, Y = 0, Z = 0 },
                 isAwake = false,
                 isHedge = false,
-                Number = i
+                Number = i,
+                Exists = false
             });
         }
         #endregion

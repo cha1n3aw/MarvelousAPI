@@ -11,12 +11,16 @@ namespace MarvelousAPI
         public static SerialPortConnection Connection { get; set; }
         public static Modem Supermodem { get; set; }
         public static byte[] ReceiveBuffer { get; set; }
+        public static Task task;
 
         public static void DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             SerialPort sp = (SerialPort)sender;
             ReceiveBuffer = new byte[sp.BytesToRead];
             sp.Read(ReceiveBuffer, 0, ReceiveBuffer.Length);
+            //Console.WriteLine();
+            //foreach (byte b in ReceiveBuffer) Console.Write($"{b:X} ");
+            //Console.WriteLine();
             if (ReceiveBuffer.Length < 5)
             {
                 Console.Write("Received too short packet: ");
@@ -87,8 +91,22 @@ namespace MarvelousAPI
                             }
                             break;
                         case 0x7f: //sleeping answer OR reading/writing device control settings
+                        {
+                            Console.Write("RECEIVED 0x7F: ");
+                            if (ReceiveBuffer.Length == 119) //all beacons answer
                             {
-                                Console.Write("RECEIVED 0x7F: ");
+                                var casted_packet = packet.CastPacket<Answer_03_31XX>();
+                                if (casted_packet.ValidateCRC(casted_packet.CRC))
+                                {
+                                    Console.WriteLine("CRC VALID");
+                                    Console.WriteLine($"all beacons: num={casted_packet.NumberOfDevices}");
+                                    foreach (Data_03_31XX_Structure structure in casted_packet.DataStructure)
+                                        Console.WriteLine($"beacon_addr={ structure.BeaconAddress }, dev_type={ structure.DeviceType }, maj_ver={ structure.MajorVersion }, min_ver={ structure.MinorVersion }, sec_min_ver={ structure.SecondMinorVersion }, slp_mode={ structure.SleepingMode }, dupl_addr={ structure.DuplicatedAddress }");
+                                }
+                                else Console.WriteLine("CRC INVALID");
+                            }
+                            else
+                            {
                                 UInt16 CodeOfData = (UInt16)((int)ReceiveBuffer[3] << 8 | (int)ReceiveBuffer[2]); //CAST IS NOT REDUNDANT, DO NOT REMOVE
                                 switch (CodeOfData)
                                 {
@@ -123,6 +141,7 @@ namespace MarvelousAPI
                                         break;
                                 }
                             }
+                        }
                             break;
                         case 0x47:
                             {
@@ -203,82 +222,81 @@ namespace MarvelousAPI
                             }
                             break;
                         case 0x03:
+                        {
+                            UInt16 CodeOfData = (UInt16)((int)ReceiveBuffer[3] << 8 | (int)ReceiveBuffer[2]); //CAST IS NOT REDUNDANT, DO NOT REMOVE
+                            switch (CodeOfData)
                             {
-                                Console.Write("RECEIVED 0x03, ");
-                                UInt16 CodeOfData = (UInt16)((int)ReceiveBuffer[3] << 8 | (int)ReceiveBuffer[2]); //CAST IS NOT REDUNDANT, DO NOT REMOVE
-                                switch (CodeOfData)
-                                {
-                                    case 0x0001:
+                                case 0x0001:
+                                    {
+                                        Console.Write("0x0001: ");
+                                        var casted_packet = packet.CastPacket<Incoming_47_0001>();
+                                        if (ReceiveBuffer.Length != 23)
+                                            if (ReceiveBuffer.Length > 23) ReceiveBuffer = ReceiveBuffer.Take(23).ToArray();
+                                            else Console.WriteLine("damaged packet");
+                                        else
                                         {
-                                            Console.Write("0x0001: ");
-                                            var casted_packet = packet.CastPacket<Incoming_47_0001>();
-                                            if (ReceiveBuffer.Length != 23)
-                                                if (ReceiveBuffer.Length > 23) ReceiveBuffer = ReceiveBuffer.Take(23).ToArray();
-                                                else Console.WriteLine("damaged packet");
-                                            else
-                                            {
-                                                Console.Write($"hedge_addr={ casted_packet.HedgeAddress }, coord_avl={ casted_packet.CoordinatesAvailable }, time_stamp={ casted_packet.Timestamp }, X={ casted_packet.Coordinates_cm.X }, Y={ casted_packet.Coordinates_cm.Y }, Z={ casted_packet.Coordinates_cm.Z }, ");
-                                                if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
-                                                else Console.WriteLine("CRC INVALID");
-                                            }
+                                            Console.Write($"hedge_addr={ casted_packet.HedgeAddress }, coord_avl={ casted_packet.CoordinatesAvailable }, time_stamp={ casted_packet.Timestamp }, X={ casted_packet.Coordinates_cm.X }, Y={ casted_packet.Coordinates_cm.Y }, Z={ casted_packet.Coordinates_cm.Z }, ");
+                                            if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
+                                            else Console.WriteLine("CRC INVALID");
                                         }
-                                        break;
-                                    case 0x0002:
+                                    }
+                                    break;
+                                case 0x0002:
+                                    {
+                                        Console.Write("0x0002: ");
+                                        var casted_packet = packet.CastPacket<Incoming_47_0002>();
+                                        if (ReceiveBuffer.Length != (8 + casted_packet.NumberOfBeacons * 8))
+                                            if (ReceiveBuffer.Length > (8 + casted_packet.NumberOfBeacons * 8)) ReceiveBuffer = ReceiveBuffer.Take(8 + casted_packet.NumberOfBeacons * 8).ToArray();
+                                            else Console.WriteLine("damaged packet");
+                                        else
                                         {
-                                            Console.Write("0x0002: ");
-                                            var casted_packet = packet.CastPacket<Incoming_47_0002>();
-                                            if (ReceiveBuffer.Length != (8 + casted_packet.NumberOfBeacons * 8))
-                                                if (ReceiveBuffer.Length > (8 + casted_packet.NumberOfBeacons * 8)) ReceiveBuffer = ReceiveBuffer.Take(8 + casted_packet.NumberOfBeacons * 8).ToArray();
-                                                else Console.WriteLine("damaged packet");
-                                            else
-                                            {
-                                                foreach (Data_47_0002_Structure structure in casted_packet.Data_Structure_cm)
-                                                    Console.Write($"beacon_addr={ structure.BeaconAddress }, X={ structure.Coordinates_cm.X }, Y={ structure.Coordinates_cm.Y }, { structure.Coordinates_cm.Z }, ");
-                                                if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
-                                                else Console.WriteLine("CRC INVALID");
-                                            }
+                                            foreach (Data_47_0002_Structure structure in casted_packet.Data_Structure_cm)
+                                                Console.Write($"beacon_addr={ structure.BeaconAddress }, X={ structure.Coordinates_cm.X }, Y={ structure.Coordinates_cm.Y }, { structure.Coordinates_cm.Z }, ");
+                                            if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
+                                            else Console.WriteLine("CRC INVALID");
                                         }
-                                        break;
-                                    case 0x0011:
+                                    }
+                                    break;
+                                case 0x0011:
+                                    {
+                                        Console.Write("0x0011: ");
+                                        var casted_packet = packet.CastPacket<Incoming_47_0011>();
+                                        if (ReceiveBuffer.Length != 29)
+                                            if (ReceiveBuffer.Length > 29) ReceiveBuffer = ReceiveBuffer.Take(29).ToArray();
+                                            else Console.WriteLine("damaged packet");
+                                        else
                                         {
-                                            Console.Write("0x0011: ");
-                                            var casted_packet = packet.CastPacket<Incoming_47_0011>();
-                                            if (ReceiveBuffer.Length != 29)
-                                                if (ReceiveBuffer.Length > 29) ReceiveBuffer = ReceiveBuffer.Take(29).ToArray();
-                                                else Console.WriteLine("damaged packet");
-                                            else
-                                            {
-                                                Console.Write($"hedge_addr={ casted_packet.HedgeAddress }, coord_avl={ casted_packet.CoordinatesAvailable }, time_stamp={ casted_packet.Timestamp }, X={ casted_packet.Coordinates_mm.X }, Y={ casted_packet.Coordinates_mm.Y }, Z={ casted_packet.Coordinates_mm.Z }, ");
-                                                if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
-                                                else Console.WriteLine("CRC INVALID");
-                                            }
+                                            Console.Write($"hedge_addr={ casted_packet.HedgeAddress }, coord_avl={ casted_packet.CoordinatesAvailable }, time_stamp={ casted_packet.Timestamp }, X={ casted_packet.Coordinates_mm.X }, Y={ casted_packet.Coordinates_mm.Y }, Z={ casted_packet.Coordinates_mm.Z }, ");
+                                            if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
+                                            else Console.WriteLine("CRC INVALID");
                                         }
-                                        break;
-                                    case 0x0012:
+                                    }
+                                    break;
+                                case 0x0012:
+                                    {
+                                        Console.Write("0x0012: ");
+                                        var casted_packet = packet.CastPacket<Incoming_47_0012>();
+                                        if (ReceiveBuffer.Length != (8 + casted_packet.NumberOfBeacons * 14))
+                                            if (ReceiveBuffer.Length > (8 + casted_packet.NumberOfBeacons * 14)) ReceiveBuffer = ReceiveBuffer.Take(8 + casted_packet.NumberOfBeacons * 14).ToArray();
+                                            else Console.WriteLine("damaged packet");
+                                        else
                                         {
-                                            Console.Write("0x0012: ");
-                                            var casted_packet = packet.CastPacket<Incoming_47_0012>();
-                                            if (ReceiveBuffer.Length != (8 + casted_packet.NumberOfBeacons * 14))
-                                                if (ReceiveBuffer.Length > (8 + casted_packet.NumberOfBeacons * 14)) ReceiveBuffer = ReceiveBuffer.Take(8 + casted_packet.NumberOfBeacons * 14).ToArray();
-                                                else Console.WriteLine("damaged packet");
-                                            else
-                                            {
-                                                foreach (Data_47_0012_Structure structure in casted_packet.Data_Structure_mm)
-                                                    Console.Write($"beacon_addr={ structure.BeaconAddress }, X={ structure.Coordinates_mm.X }, Y={ structure.Coordinates_mm.Y }, { structure.Coordinates_mm.Z }, loc_appl={ structure.LocationApplicable }, ");
-                                                if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
-                                                else Console.WriteLine("CRC INVALID");
-                                            }
+                                            foreach (Data_47_0012_Structure structure in casted_packet.Data_Structure_mm)
+                                                Console.Write($"beacon_addr={ structure.BeaconAddress }, X={ structure.Coordinates_mm.X }, Y={ structure.Coordinates_mm.Y }, { structure.Coordinates_mm.Z }, loc_appl={ structure.LocationApplicable }, ");
+                                            if (casted_packet.ValidateCRC(casted_packet.CRC)) Console.WriteLine("CRC VALID");
+                                            else Console.WriteLine("CRC INVALID");
                                         }
-                                        break;
-                                    default: //unknown data code
-                                        {
-                                            Console.Write("data code unknown: ");
-                                            foreach (byte b in ReceiveBuffer) Console.Write($"{b:x} ");
-                                            Console.WriteLine();
-                                        }
-                                        break;
-                                }
+                                    }
+                                    break;
+                                default: //unknown data code
+                                    {
+                                        Console.Write("data code unknown: ");
+                                        foreach (byte b in ReceiveBuffer) Console.Write($"{b:x} ");
+                                        Console.WriteLine();
+                                    }
+                                    break;
                             }
+                        }
                             break;
                         default:
                             {
@@ -293,8 +311,44 @@ namespace MarvelousAPI
             }
         }
 
+        public static int Draw(string str)
+        {
+            Console.Clear();
+
+            return 0;
+        }
+
+        public static void DrawMenu()
+        {
+            Draw($"Main menu:\n1) List all beacons\n2)Get modem firmware\n3)Get last coordinates");
+            switch (Convert.ToInt32(Console.ReadLine()))
+            {
+                case 1:
+                    {
+                        task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
+                    }
+                    break;
+                case 2:
+                    {
+
+                    }
+                    break;
+                case 3:
+                    {
+
+                    }
+                    break;
+                default:
+                    {
+
+                    }
+                    break;
+            }
+        }
+
         public static void Main(string[] args)
         {
+
             Console.WriteLine("Press enter");
             Console.ReadLine();
             Connection = new();
@@ -302,38 +356,31 @@ namespace MarvelousAPI
             Connection.Open(Connection.Scan()[0]);
             Connection.Port.DataReceived += new SerialDataReceivedEventHandler(DataReceived);
             Connection.Port.DiscardInBuffer();
-            Connection.Port.DiscardOutBuffer();            
-            Task task;
-            //task = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
+            Connection.Port.DiscardOutBuffer();
+
+            task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)0));
             //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].Sleep(Connection));
-            
-            task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].Sleep(Connection));
-            while (!task.IsCompleted)
-            {
+            //while (!task.IsCompleted)
+            //{
 
-            }
-            task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 3).Number].Sleep(Connection));
-            while (!task.IsCompleted)
-            {
+            //}
+            //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 3).Number].Sleep(Connection));
+            //while (!task.IsCompleted)
+            //{
 
-            }
-            task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 4).Number].Sleep(Connection));
-            while (!task.IsCompleted)
-            {
+            //}
+            //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 4).Number].Sleep(Connection));
+            //while (!task.IsCompleted)
+            //{
 
-            }
-            task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 5).Number].Sleep(Connection));
-            while (!task.IsCompleted)
-            {
+            //}
+            //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 5).Number].Sleep(Connection));
+            //while (!task.IsCompleted)
+            //{
 
-            }
-            Console.WriteLine("Awaken all");
-            
+            //}
+            //Console.WriteLine("Awaken all");
             Console.ReadLine();
-            // task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].Sleep(Connection));
-            //supermodem.Beacons[2].Sleep(connection);
-            //await Task.Delay(1);
-
         }
     }
 }
@@ -341,6 +388,7 @@ namespace MarvelousAPI
 /*
 task = Task.Run(async () => await Supermodem.GetFirmwareVersion(Connection));
 task = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
+task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)0));
 
 task = Task.Run(async () => await Supermodem.Beacons[2].GetFirmwareVersion(Connection));
 task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].WakeUp(Connection));

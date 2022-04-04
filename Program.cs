@@ -211,7 +211,7 @@ namespace MarvelousAPI
                                             }
                                         }
                                         break;
-                                    default: //unknown data code
+                                    default:   //unknown data code
                                         {
                                             Console.Write("data code unknown: ");
                                             foreach (byte b in ReceiveBuffer) Console.Write($"{b:x} ");

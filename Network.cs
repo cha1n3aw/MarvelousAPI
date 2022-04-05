@@ -11,15 +11,21 @@ namespace MarvelousAPI
 {
     class Network
     {
-        public delegate void DataReceivedHandler(object sender, DataReceivedEventArgs e);
-        public event DataReceivedHandler OnDataReceived;
+        #region Public
+        public delegate void UdpDataReceivedHandler(object sender, DataReceivedEventArgs e);
+        public event UdpDataReceivedHandler OnDataReceived;
+        public bool AllowDebug = false;
+        #endregion
+        #region Private
         private string RemoteAddress = string.Empty;
         private int RemotePort = 0;
         private int LocalPort = 0;
         private bool Run = false;
-        Thread ReceiveThread;
-        UdpClient sender;
+        private Thread ReceiveThread;
+        private UdpClient sender;
+        #endregion
 
+        #region Private
         private void ReceiveData()
         {
             UdpClient receiver = new(LocalPort);
@@ -43,8 +49,35 @@ namespace MarvelousAPI
             }
             receiver.Close();
             GC.Collect();
-        } 
-        
+        }
+
+        private void HiddenStart(string remoteAddress, int remotePort, int localPort)
+        {
+            RemoteAddress = remoteAddress;
+            RemotePort = remotePort;
+            LocalPort = localPort;
+            sender = new UdpClient();
+            Run = true;
+            ReceiveThread = new Thread(new ThreadStart(ReceiveData));
+            ReceiveThread.Start();
+            while (ReceiveThread.ThreadState != ThreadState.Running) ;
+        }
+        #endregion
+        #region Public
+        public void DebugWriteLine(string data)
+        {
+            if (AllowDebug) Console.WriteLine(data);
+        }
+        public void DebugWriteLine()
+        {
+            if (AllowDebug) Console.WriteLine();
+        }
+
+        public void DebugWrite(string data)
+        {
+            if (AllowDebug) Console.Write(data);
+        }
+
         public void Send(string data)
         {
             try
@@ -67,18 +100,6 @@ namespace MarvelousAPI
                 Message = message;
                 RemoteIP = remoteIp;
             }
-        }
-
-        private void HiddenStart(string remoteAddress, int remotePort, int localPort)
-        {
-            RemoteAddress = remoteAddress;
-            RemotePort = remotePort;
-            LocalPort = localPort;
-            sender = new UdpClient();
-            Run = true;
-            ReceiveThread = new Thread(new ThreadStart(ReceiveData));
-            ReceiveThread.Start();
-            while (ReceiveThread.ThreadState != ThreadState.Running) ;
         }
 
         public void Start(string remoteAddress, int remotePort)
@@ -104,5 +125,6 @@ namespace MarvelousAPI
         {
 
         }
+        #endregion
     }
 }

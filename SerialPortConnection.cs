@@ -9,6 +9,21 @@ namespace MarvelousAPI
     {
         #region Public
         public SerialPort Port = null;
+        public bool AllowDebug = false;
+
+        public void DebugWriteLine(string data)
+        {
+            if (AllowDebug) Console.WriteLine(data);
+        }
+        public void DebugWriteLine()
+        {
+            if (AllowDebug) Console.WriteLine();
+        }
+
+        public void DebugWrite(string data)
+        {
+            if (AllowDebug) Console.Write(data);
+        }
 
         public bool Write(byte[] buffer)
         {

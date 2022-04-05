@@ -1,13 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MarvelousAPI
 {
     public struct Data_03_31XX_Structure
     {
+        #region Public
         public byte BeaconAddress;
         public byte MajorVersion;
         public byte MinorVersion;
@@ -15,42 +13,53 @@ namespace MarvelousAPI
         public byte DeviceType;
         public bool DuplicatedAddress;
         public bool SleepingMode;
+        #endregion
     }
 
     public struct Data_03_4110_Structure
     {
+        #region Public
         public byte BeaconAddress;
         public CoordinatesStructure_mm Coordinates_mm;
         public bool no_relevant_coordinates;
         public bool temporary_mobile_beacon;
         public bool beacon_is_used_for_positioning;
+        #endregion
     }
 
     public struct Data_47_0002_Structure
     {
+        #region Public
         public byte BeaconAddress;
         public CoordinatesStructure_cm Coordinates_cm;
+        #endregion
     }
 
     public struct Data_47_0012_Structure
     {
+        #region Public
         public byte BeaconAddress;
         public CoordinatesStructure_mm Coordinates_mm;
         public bool LocationApplicable;
+        #endregion
     }
 
     public struct CoordinatesStructure_cm
     {
+        #region Public
         public Int16 X;
         public Int16 Y;
         public Int16 Z;
+        #endregion
     }
 
     public struct CoordinatesStructure_mm
     {
+        #region Public
         public Int32 X;
         public Int32 Y;
         public Int32 Z;
+        #endregion
     }
 
     class IncomingPacket

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace MarvelousAPI
@@ -23,7 +22,7 @@ namespace MarvelousAPI
                 DeviceAddress = Number
             };
             connection.Write(packet_03_fe00.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public async Task WakeUp(SerialPortConnection connection)
@@ -35,7 +34,7 @@ namespace MarvelousAPI
                 DeviceAddress = Number
             };
             connection.Write(packet_10_B006.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public async Task Sleep(SerialPortConnection connection)
@@ -47,7 +46,7 @@ namespace MarvelousAPI
                 DeviceAddress = Number
             };
             connection.Write(packet_10_B006.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public Beacon()

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace MarvelousAPI
@@ -23,21 +20,21 @@ namespace MarvelousAPI
                 DeviceAddress = ModemAddress
             };
             connection.Write(packet_03_fe00.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public async Task GetLastCoordinates(SerialPortConnection connection)
         {
             Request_03_4110 packet_03_4110 = new();
             connection.Write(packet_03_4110.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public async Task GetAvailableBeacons(SerialPortConnection connection, byte groupnumber)
         {
             Request_03_31XX packet_03_31xx = new() { GroupNumber = groupnumber };
             connection.Write(packet_03_31xx.ToBuffer());
-            await Task.Delay(15000);
+            await Task.Delay(1000);
         }
 
         public Modem()

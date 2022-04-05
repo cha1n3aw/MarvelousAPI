@@ -346,9 +346,25 @@ namespace MarvelousAPI
             }
         }
 
+        public static void DataReceived(object sender, Network.DataReceivedEventArgs e)
+        {
+            Console.WriteLine($"{e.RemoteIP.Address} : {e.Message}");
+        }
+
+
         public static void Main(string[] args)
         {
 
+            Console.WriteLine("Press enter");
+            Console.ReadLine();
+            Console.WriteLine("Initialization started...");
+            Network network = new();
+            network.OnDataReceived += new Network.DataReceivedHandler(DataReceived);
+            network.Start("127.0.0.1", 8001);
+            //network.Start("127.0.0.1", 8001, 8002); //it allows to listen on a different port
+            network.Send("Connehhhhhhh hhjjjjjjgdsfsdfgsdfgsdfgnnnnn");
+            network.Send("Conn");
+            network.Send("Con");
             Console.WriteLine("Press enter");
             Console.ReadLine();
             Connection = new();
@@ -357,8 +373,8 @@ namespace MarvelousAPI
             Connection.Port.DataReceived += new SerialDataReceivedEventHandler(DataReceived);
             Connection.Port.DiscardInBuffer();
             Connection.Port.DiscardOutBuffer();
-
-            task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)0));
+            Console.WriteLine("Initialization finished!");
+            //task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)0));
             //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].Sleep(Connection));
             //while (!task.IsCompleted)
             //{
@@ -381,6 +397,7 @@ namespace MarvelousAPI
             //}
             //Console.WriteLine("Awaken all");
             Console.ReadLine();
+            network.Stop();
         }
     }
 }

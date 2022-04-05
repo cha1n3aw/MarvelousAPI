@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO.Ports;
 using System.Linq;
@@ -311,39 +312,10 @@ namespace MarvelousAPI
             }
         }
 
-        public static int Draw(string str)
-        {
-            Console.Clear();
-
-            return 0;
-        }
-
         public static void DrawMenu()
         {
-            Draw($"Main menu:\n1) List all beacons\n2)Get modem firmware\n3)Get last coordinates");
-            switch (Convert.ToInt32(Console.ReadLine()))
-            {
-                case 1:
-                    {
-                        task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
-                    }
-                    break;
-                case 2:
-                    {
-
-                    }
-                    break;
-                case 3:
-                    {
-
-                    }
-                    break;
-                default:
-                    {
-
-                    }
-                    break;
-            }
+            Console.Clear();
+            Console.WriteLine($"Main menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n0) Reselect COM port");
         }
 
         public static void DataReceived(object sender, Network.DataReceivedEventArgs e)
@@ -351,29 +323,74 @@ namespace MarvelousAPI
             Console.WriteLine($"{e.RemoteIP.Address} : {e.Message}");
         }
 
-
         public static void Main(string[] args)
         {
-
-            Console.WriteLine("Press enter");
-            Console.ReadLine();
-            Console.WriteLine("Initialization started...");
+            int choice = -1;
             Network network = new();
             network.OnDataReceived += new Network.DataReceivedHandler(DataReceived);
             network.Start("127.0.0.1", 8001);
             //network.Start("127.0.0.1", 8001, 8002); //it allows to listen on a different port
-            network.Send("Connehhhhhhh hhjjjjjjgdsfsdfgsdfgsdfgnnnnn");
-            network.Send("Conn");
-            network.Send("Con");
-            Console.WriteLine("Press enter");
-            Console.ReadLine();
+
+        rescan_comports:
+            if (Connection != null) Connection = null;
             Connection = new();
-            Supermodem = new();
-            Connection.Open(Connection.Scan()[0]);
-            Connection.Port.DataReceived += new SerialDataReceivedEventHandler(DataReceived);
-            Connection.Port.DiscardInBuffer();
-            Connection.Port.DiscardOutBuffer();
-            Console.WriteLine("Initialization finished!");
+            Console.Clear();
+            Console.WriteLine("Select serial port:");
+            List<string> comportnames = Connection.Scan();
+            if (comportnames.Count == 0)
+            {
+                Console.WriteLine("No COM ports availaible! Press any key to retry...");
+                Console.ReadKey();
+                goto rescan_comports;
+            }
+            for(int i = 0; i < comportnames.Count; i++) Console.WriteLine($"{ i + 1 }: { comportnames[i] }");
+            choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
+            if (choice < 0 || choice > comportnames.Count) goto rescan_comports;
+            if (choice == 0) return;
+            else
+            {
+                Connection.Open(comportnames[choice - 1]);
+                Connection.Port.DataReceived += new SerialDataReceivedEventHandler(DataReceived);
+                Connection.Port.DiscardInBuffer();
+                Connection.Port.DiscardOutBuffer();
+            }
+            if (Supermodem == null) Supermodem = new();  
+        main_menu:
+            DrawMenu();
+            choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
+            if (choice < 0 || choice > 3) goto main_menu;
+            switch (choice)
+            {
+                case 0:
+                    {
+                        Connection.Close();
+                        goto rescan_comports;
+                    }
+                case 1:
+                    {
+                        task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
+                        //while (!task.IsCompleted) ;
+                        goto main_menu;
+                    }
+                case 2:
+                    {
+                        task = Task.Run(async () => await Supermodem.GetFirmwareVersion(Connection));
+                        //while (!task.IsCompleted) ;
+                        goto main_menu;
+                    }
+                case 3:
+                    {
+                        task = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
+                        //while (!task.IsCompleted) ;
+                        goto main_menu;
+                    }
+                default:
+                    {
+
+                    }
+                    break;
+            }            
+            
             //task = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)0));
             //task = Task.Run(async () => await Supermodem.Beacons[Supermodem.Beacons.Find(x => x.Number == 2).Number].Sleep(Connection));
             //while (!task.IsCompleted)

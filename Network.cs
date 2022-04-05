@@ -22,29 +22,27 @@ namespace MarvelousAPI
 
         private void ReceiveData()
         {
-            UdpClient receiver = new UdpClient(LocalPort);
+            UdpClient receiver = new(LocalPort);
             IPEndPoint remoteIp = null;
-            try
+            while (Run)
             {
-                while (Run)
+                try
                 {
                     byte[] data = receiver.Receive(ref remoteIp);
                     string message = Encoding.Default.GetString(data);
                     if (OnDataReceived != null)
                     {
-                        DataReceivedEventArgs args = new DataReceivedEventArgs(message, remoteIp);
+                        DataReceivedEventArgs args = new(message, remoteIp);
                         OnDataReceived(this, args);
                     }
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-            finally
-            {
-                receiver.Close();
-            }
+            receiver.Close();
+            GC.Collect();
         } 
         
         public void Send(string data)
@@ -57,10 +55,6 @@ namespace MarvelousAPI
             catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
-            }
-            finally
-            {
-                
             }
         }
 
@@ -84,6 +78,7 @@ namespace MarvelousAPI
             Run = true;
             ReceiveThread = new Thread(new ThreadStart(ReceiveData));
             ReceiveThread.Start();
+            while (ReceiveThread.ThreadState != ThreadState.Running) ;
         }
 
         public void Start(string remoteAddress, int remotePort)
@@ -102,6 +97,7 @@ namespace MarvelousAPI
             while (ReceiveThread.ThreadState == ThreadState.Running) ;
             sender.Close();
             sender.Dispose();
+            GC.Collect();
         }
 
         public Network()

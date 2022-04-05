@@ -17,11 +17,20 @@ namespace MarvelousAPI
             Port.DiscardOutBuffer();
             return true;
         }
+
         public List<string> Scan()
         {
             List<string> portsList = SerialPort.GetPortNames().ToList();
             return portsList;
         }
+
+        public bool Close()
+        {
+            if (Port != null && Port.IsOpen) Port.Close();
+            else return false;
+            return true;
+        }
+
         public bool Open(string portName)
         {
             try

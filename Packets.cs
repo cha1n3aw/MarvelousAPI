@@ -395,7 +395,7 @@ namespace MarvelousAPI
                 if (buffer[4 + i * 7] != 0)
                 {
                     beacon_info[i].BeaconAddress = buffer[4 + i * 7];
-                    beacon_info[i].DeviceType = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b00011111);
+                    beacon_info[i].DeviceType = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b00111111);
                     beacon_info[i].DuplicatedAddress = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b01000000) == 0b01000000;
                     beacon_info[i].SleepingMode = (byte)((UInt16)buffer[7 + i * 7] & (UInt16)0b10000000) == 0b10000000;
                     beacon_info[i].MajorVersion = buffer[5 + i * 7];

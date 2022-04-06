@@ -14,6 +14,7 @@ namespace MarvelousAPI
         public bool isHedge { get; set; }
         public bool isAwake { get; set; }
         public bool Exists { get; set; }
+        public string FirmwareVersion { get; set; } 
 
         public async Task GetFirmwareVersion(SerialPortConnection connection)
         {

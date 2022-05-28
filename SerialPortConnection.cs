@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace MarvelousAPI
 {
-    class SerialPortConnection
+    public class SerialPortConnection
     {
         #region Public
         public SerialPort Port = null;
@@ -63,7 +63,7 @@ namespace MarvelousAPI
                 Port.Open();
                 return true;
             }
-            catch(Exception e) { return false; }
+            catch (Exception) { return false; }
         }
         #endregion
     }

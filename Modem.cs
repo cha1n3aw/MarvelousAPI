@@ -3,15 +3,27 @@ using System.Threading.Tasks;
 
 namespace MarvelousAPI
 {
-    class Modem
+    public class ModemSettings
+    {
+        public byte MajorVersion { get; set; }
+        public byte MinorVersion { get; set; }
+        public byte BaseBeaconID { get; set; }
+        public byte SecondBaseBeaconID { get; set; }
+        public bool HighResolutionMode { get; set; }
+        public bool MovementFiltering { get; set; }
+        public bool PowerSaveMode { get; set; }
+    }
+
+    public class Modem
     {
         #region Private
         private const byte ModemAddress = 0xff;
         #endregion
+
         #region Public
         public List<Beacon> Beacons { get; set; }
-        public byte MajorVersion { get; set; }
-        public byte MinorVersion { get; set; }
+        public List<Submap> Submaps { get; set; }
+        public ModemSettings Settings { get; set; }
 
         public async Task GetFirmwareVersion(SerialPortConnection connection)
         {
@@ -40,15 +52,12 @@ namespace MarvelousAPI
         public Modem()
         {
             Beacons = new List<Beacon>();
-            for (byte i = 0x00; i < ModemAddress; i++) Beacons.Add(new Beacon()
-            {
-                Coordinates_cm = new CoordinatesStructure_cm { X = 0, Y = 0, Z = 0 },
-                Coordinates_mm = new CoordinatesStructure_mm { X = 0, Y = 0, Z = 0 },
-                isAwake = false,
-                isHedge = false,
-                Number = i,
-                Exists = false
-            });
+            for (byte i = 0x00; i < ModemAddress; i++)
+                Beacons.Add(new Beacon()
+                {
+                    Coordinates_mm = new CoordinatesStructure_mm { X = 0, Y = 0, Z = 0 },
+                    Settings = new() { isAwake = false, isHedge = false, ID = i, FirmwareVersion = "0", RadioBand = 0, RadioProfile = 0, Submap = 0, UartBaud = 0 }
+                });
         }
         #endregion
     }

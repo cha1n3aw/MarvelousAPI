@@ -14,7 +14,9 @@ namespace MarvelousAPI
         #region Private
         private static SerialPortConnection Connection { get; set; }
         private static Modem Supermodem { get; set; }
-        private static Network Network { get; set; }
+        private static Network ModemUdpStream { get; set; }
+        private static Network ClientUdpStream { get; set; }
+        private static SerializerAPI Serializer { get; set; }
         #endregion
 
         #region Public
@@ -61,7 +63,7 @@ namespace MarvelousAPI
                                     case 0xb006: //wake up
                                         {
                                             var casted_packet = packet.CastPacket<Answer_10_b006>();
-                                            Supermodem.Beacons[casted_packet.Address].isAwake = true;
+                                            Supermodem.Beacons[casted_packet.Address].Settings.isAwake = true;
                                             Connection.DebugWrite($"data_code={CodeOfData:X}, addr={casted_packet.Address}, ");
                                             if (casted_packet.ValidateCRC(casted_packet.CRC)) Connection.DebugWriteLine("CRC VALID");
                                             else Connection.DebugWriteLine("CRC INVALID");
@@ -110,14 +112,14 @@ namespace MarvelousAPI
                                         if (structure.BeaconAddress < 255)
                                         {
                                             Connection.DebugWriteLine($"beacon_addr={ structure.BeaconAddress }, dev_type={ structure.DeviceType }, maj_ver={ structure.MajorVersion }, min_ver={ structure.MinorVersion }, sec_min_ver={ structure.SecondMinorVersion }, slp_mode={ structure.SleepingMode }, dupl_addr={ structure.DuplicatedAddress }");
-                                            Supermodem.Beacons[structure.BeaconAddress].Exists = true;
-                                            Supermodem.Beacons[structure.BeaconAddress].isAwake = !structure.SleepingMode;
-                                            Supermodem.Beacons[structure.BeaconAddress].isHedge =
+                                            Supermodem.Beacons[structure.BeaconAddress].Settings.Exists = true;
+                                            Supermodem.Beacons[structure.BeaconAddress].Settings.isAwake = !structure.SleepingMode;
+                                            Supermodem.Beacons[structure.BeaconAddress].Settings.isHedge = 
                                                 (byte)(structure.DeviceType & (byte)0b00111111) == 43 ||
                                                 (byte)(structure.DeviceType & (byte)0b00111111) == 23 ||
                                                 (byte)(structure.DeviceType & (byte)0b00111111) == 31 ||
                                                 (byte)(structure.DeviceType & (byte)0b00111111) == 45;
-                                            Supermodem.Beacons[structure.BeaconAddress].FirmwareVersion = $"{ structure.MajorVersion }.{ structure.MinorVersion }.{ structure.SecondMinorVersion }";
+                                            Supermodem.Beacons[structure.BeaconAddress].Settings.FirmwareVersion = $"{ structure.MajorVersion }.{ structure.MinorVersion }.{ structure.SecondMinorVersion }";
                                         }
                                     }
                                 }
@@ -131,7 +133,7 @@ namespace MarvelousAPI
                                     case 0xb006: //sleep answer
                                         {
                                             var casted_packet = packet.CastPacket<Answer_7f_b006>();
-                                            Supermodem.Beacons[casted_packet.Address].isAwake = false;
+                                            Supermodem.Beacons[casted_packet.Address].Settings.isAwake = false;
                                             Connection.DebugWrite($"addr={casted_packet.Address}, ");
                                             if (casted_packet.ValidateCRC(casted_packet.CRC)) Connection.DebugWriteLine("CRC VALID");
                                             else Connection.DebugWriteLine("CRC INVALID");
@@ -350,11 +352,6 @@ namespace MarvelousAPI
             }
         }
 
-        public static void UdpDataReceived(object sender, Network.DataReceivedEventArgs e)
-        {
-            Network.DebugWriteLine($"{e.RemoteIP.Address} : {e.Message}");
-        }
-
         public static void DrawMessage(string message, ref int choice)
         {
             Console.Clear();
@@ -362,174 +359,275 @@ namespace MarvelousAPI
             choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
         }
 
+        public static void ClientUdpDataReceived(object sender, Network.DataReceivedEventArgs e)
+        {
+            ClientUdpStream.DebugWriteLine($"{e.RemoteIP.Address} : {e.Message}");
+            dynamic method = Serializer.Deserialize(e.Message);
+            if (method?.GetType().ToString() == "MarvelousAPI.Beacon")
+                Supermodem.Beacons[Supermodem.Beacons.FindIndex(x => x.Settings.ID == ((Beacon)method).Settings.ID)] = (Beacon)method;
+            Console.WriteLine(Supermodem.Beacons[Supermodem.Beacons.FindIndex(x => x.Settings.ID == ((Beacon)method).Settings.ID)].Settings.RadioBand);
+        }
+
+        public static void ModemUdpDataReceived(object sender, Network.DataReceivedEventArgs e)
+        {
+            ModemUdpStream.DebugWriteLine($"{e.RemoteIP.Address} : {e.Message}");
+            int temp = (byte)e.Message[2];
+            temp = temp << 8;
+            temp += (byte)e.Message[3];
+            if (temp == 0x0011)
+			{
+                int x = (byte)e.Message[12];
+                x = x << 8;
+                x += (byte)e.Message[11];
+                x = x << 8;
+                x += (byte)e.Message[10];
+                x = x << 8;
+                x += (byte)e.Message[9];
+
+                int y = (byte)e.Message[16];
+                y = y << 8;
+                y += (byte)e.Message[15];
+                y = y << 8;
+                y += (byte)e.Message[14];
+                y = y << 8;
+                y += (byte)e.Message[13];
+
+                int z = (byte)e.Message[12];
+                z = z << 8;
+                z += (byte)e.Message[11];
+                z = z << 8;
+                z += (byte)e.Message[10];
+                z = z << 8;
+                z += (byte)e.Message[9];
+
+                Supermodem.Beacons[(byte)e.Message[0]].Coordinates_mm = new CoordinatesStructure_mm { X = x, Y = y, Z = z};
+                ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[(byte)e.Message[0]]));
+            }
+            else if (temp == 0x0012)
+			{
+                for (int i = 0; i < (byte)e.Message[5]; i++)
+				{
+                    int id = (byte)e.Message[6 + i * 14 + 0];
+
+                    int x = (byte)e.Message[6 + i * 14 + 4];
+                    x = x << 8;
+                    x += (byte)e.Message[6 + i * 14 + 3];
+                    x = x << 8;
+                    x += (byte)e.Message[6 + i * 14 + 2];
+                    x = x << 8;
+                    x += (byte)e.Message[6 + i * 14 + 1];
+
+                    int y = (byte)e.Message[6 + i * 14 + 8];
+                    y = y << 8;
+                    y += (byte)e.Message[6 + i * 14 + 7];
+                    y = y << 8;
+                    y += (byte)e.Message[6 + i * 14 + 6];
+                    y = y << 8;
+                    y += (byte)e.Message[6 + i * 14 + 5];
+
+                    int z = (byte)e.Message[6 + i * 14 + 12];
+                    z = z << 8;
+                    z += (byte)e.Message[6 + i * 14 + 11];
+                    z = z << 8;
+                    z += (byte)e.Message[6 + i * 14 + 10];
+                    z = z << 8;
+                    z += (byte)e.Message[6 + i * 14 + 9];
+
+                    Supermodem.Beacons[id].Coordinates_mm = new CoordinatesStructure_mm { X = x, Y = y, Z = z };
+                    ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[id]));
+                }
+			}
+        }
+
         public static void Main(string[] args)
         {
             int choice = -1;
-            Network = new();
-            Network.OnDataReceived += new Network.UdpDataReceivedHandler(UdpDataReceived);
-            Network.Start("127.0.0.1", 8001);
-            //network.Start("127.0.0.1", 8001, 8002); //it allows to listen on a different port
+            ClientUdpStream = new();
+            Serializer = new();
             Supermodem = new();
-        rescan_comports:
-            if (Connection != null) Connection = null;
-            Connection = new();
-            Console.Clear();
-            Console.WriteLine("Select serial port:");
-            List<string> comportnames = Connection.Scan();
-            if (comportnames.Count == 0)
+            ClientUdpStream.OnDataReceived += new Network.UdpDataReceivedHandler(ClientUdpDataReceived);
+            ClientUdpStream.Start("127.0.0.1", 8002, 8001); //it allows to listen on a different port
+            //ClientUdpStream.AllowDebug = true;
+            //Console.ReadKey();
+        select_connection_type:
+            DrawMessage("Select connection type:\n1) COM\n2) UDP", ref choice);
+            if (choice == 1)
             {
-                DrawMessage("No COM ports availaible! Press any key to retry...", ref choice);
-                goto rescan_comports;
+        rescan_comports:
+                /*
+                if (Connection != null) Connection = null;
+                Connection = new();
+                Console.Clear();
+                Console.WriteLine("Select serial port:");
+                List<string> comportnames = Connection.Scan();
+                if (comportnames.Count == 0)
+                {
+                    DrawMessage("No COM ports availaible! Press any key to retry...", ref choice);
+                    goto rescan_comports;
+                }
+                for (int i = 0; i < comportnames.Count; i++) Console.WriteLine($"{ i + 1 }: { comportnames[i] }");
+                choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
+                if (choice < 0 || choice > comportnames.Count) goto rescan_comports;
+                if (choice == 0) return;
+                else
+                {
+                    Connection.Open(comportnames[choice - 1]);
+                    Connection.Port.DataReceived += new SerialDataReceivedEventHandler(SerialDataReceived);
+                    Connection.Port.DiscardInBuffer();
+                    Connection.Port.DiscardOutBuffer();
+                }
+                */
+            main_menu:
+                DrawMessage($"Main menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n4) Serial debugging\n5) UDP debugging\n6) Wake up beacons\n7) Sleep beacons\n8) Re-scan for available beacons\n9) Reselect COM port\n0) Exit", ref choice);
+                if (choice < 0 || choice > 9) goto main_menu;
+                switch (choice)
+                {
+                    case 1:
+                        {
+                            Console.Clear();
+                            List<Beacon> beacons = Supermodem.Beacons.FindAll(x => x.Settings.Exists == true);
+                            if (beacons.Count == 0)
+                            {
+                                DrawMessage("No available beacons! Re-scan manually\nPress any key...", ref choice);
+                                goto main_menu;
+                            }
+                            else
+                            {
+                                for (int i = 0; i < beacons.Count; i++)
+                                    Console.WriteLine($"{ beacons[i].Settings.ID }: Awaken = { beacons[i].Settings.isAwake }, IsHedge = { beacons[i].Settings.isHedge }, Firmware = { beacons[i].Settings.FirmwareVersion }");
+                                Console.WriteLine("Press any key...");
+                                Console.ReadKey();
+                                goto main_menu;
+                            }
+                        }
+                    case 2:
+                        {
+                            Task newTask = Task.Run(async () => await Supermodem.GetFirmwareVersion(Connection));
+                            while (!newTask.IsCompleted) ;
+                            DrawMessage($"Modem version: { Supermodem.Settings.MajorVersion }.{ Supermodem.Settings.MinorVersion }", ref choice);
+                            goto main_menu;
+                        }
+                    case 3:
+                        {
+                            Task newTask = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
+                            while (!newTask.IsCompleted) ;
+                            goto main_menu;
+                        }
+                    case 4:
+                        {
+                            Connection.AllowDebug = true;
+                            DrawMessage("Press any key...", ref choice);
+                            Connection.AllowDebug = false;
+                            goto main_menu;
+                        }
+                    case 5:
+                        {
+                            ClientUdpStream.AllowDebug = true;
+                            DrawMessage("Press any key...", ref choice);
+                            ClientUdpStream.AllowDebug = false;
+                            goto main_menu;
+                        }
+                    case 6:
+                        {
+                        wakeup_beacons:
+                            List<Beacon> sleepyBeacons = Supermodem.Beacons.FindAll(x => x.Settings.isAwake == false && x.Settings.Exists == true);
+                            if (sleepyBeacons.Count == 0)
+                            {
+                                DrawMessage("No beacons in sleep mode! Re-scan manually\nPress any key...", ref choice);
+                                goto main_menu;
+                            }
+                            else
+                            {
+                                Console.Clear();
+                                for (int i = 0; i < sleepyBeacons.Count; i++) Console.WriteLine($"{ sleepyBeacons[i].Settings.ID } : Hedge = { sleepyBeacons[i].Settings.isHedge }");
+                                Console.WriteLine("Select beacon address: ");
+                                choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
+                                if (choice != 255 && sleepyBeacons.Find(x => x.Settings.ID == choice) == null) goto wakeup_beacons;
+                                else
+                                {
+                                    Task newTask;
+                                    if (choice == 255)
+                                    {
+                                        foreach (Beacon beacon in sleepyBeacons)
+                                        {
+                                            newTask = Task.Run(async () => await sleepyBeacons.Find(x => x.Settings.ID == choice).WakeUp(Connection));
+                                            while (!newTask.IsCompleted) ;
+                                        }
+                                    }
+                                    else newTask = Task.Run(async () => await sleepyBeacons.Find(x => x.Settings.ID == choice).WakeUp(Connection));
+                                    goto main_menu;
+                                }
+                            }
+                        }
+                    case 7:
+                        {
+                        sleep_beacons:
+                            List<Beacon> awakenBeacons = Supermodem.Beacons.FindAll(x => x.Settings.isAwake == true && x.Settings.Exists == true);
+                            if (awakenBeacons.Count == 0)
+                            {
+                                DrawMessage("No awaken beacons! Re-scan manually\nPress any key...", ref choice);
+                                goto main_menu;
+                            }
+                            else
+                            {
+                                Console.Clear();
+                                for (int i = 0; i < awakenBeacons.Count; i++) Console.WriteLine($"{ awakenBeacons[i].Settings.ID } : Hedge = { awakenBeacons[i].Settings.isHedge }");
+                                Console.WriteLine("Select beacon address: ");
+                                choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
+                                if (awakenBeacons.Find(x => x.Settings.ID == choice) == null) goto sleep_beacons;
+                                else
+                                {
+                                    Task newTask;
+                                    if (choice == 255)
+                                    {
+                                        foreach (Beacon beacon in awakenBeacons)
+                                        {
+                                            newTask = Task.Run(async () => await awakenBeacons.Find(x => x.Settings.ID == choice).Sleep(Connection));
+                                            while (!newTask.IsCompleted) ;
+                                        }
+                                    }
+                                    else newTask = Task.Run(async () => await awakenBeacons.Find(x => x.Settings.ID == choice).Sleep(Connection));
+                                    goto main_menu;
+                                }
+                            }
+                        }
+                    case 8:
+                        {
+                            Task newTask = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
+                            while (!newTask.IsCompleted) ;
+                            goto main_menu;
+                        }
+                    case 9:
+                        {
+                            Connection.Close();
+                            goto rescan_comports;
+                        }
+                    case 0:
+                        {
+                            Connection.Close();
+                            ClientUdpStream.Stop();
+                            GC.Collect();
+                            return;
+                        }
+                    default:
+                        {
+                            DrawMessage("Unimplemented function\nPress any key...", ref choice);
+                            goto main_menu;
+                        }
+                }
             }
-            for(int i = 0; i < comportnames.Count; i++) Console.WriteLine($"{ i + 1 }: { comportnames[i] }");
-            choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
-            if (choice < 0 || choice > comportnames.Count) goto rescan_comports;
-            if (choice == 0) return;
+            else if (choice == 2)
+            {
+                ClientUdpStream.Start("172.20.10.2", 49100); //it allows to listen on a different port
+                ModemUdpStream = new();
+                ModemUdpStream.OnDataReceived += new Network.UdpDataReceivedHandler(ModemUdpDataReceived);
+            }
             else
             {
-                Connection.Open(comportnames[choice - 1]);
-                Connection.Port.DataReceived += new SerialDataReceivedEventHandler(SerialDataReceived);
-                Connection.Port.DiscardInBuffer();
-                Connection.Port.DiscardOutBuffer();
+                DrawMessage("Wrong choice! Press any key to retry...", ref choice);
+                goto select_connection_type;
             }
-        main_menu:
-            DrawMessage($"Main menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n4) Serial debugging\n5) UDP debugging\n6) Wake up beacons\n7) Sleep beacons\n8) Re-scan for available beacons\n9) Reselect COM port\n0) Exit", ref choice);
-            if (choice < 0 || choice > 9) goto main_menu;
-            switch (choice)
-            {
-                case 1:
-                    {
-                        Console.Clear();
-                        List<Beacon> beacons = Supermodem.Beacons.FindAll(x => x.Exists == true);
-                        if (beacons.Count == 0)
-                        {
-                            DrawMessage("No available beacons! Re-scan manually\nPress any key...", ref choice);
-                            goto main_menu;
-                        }
-                        else
-                        {
-                            for (int i = 0; i < beacons.Count; i++)
-                                Console.WriteLine($"{ beacons[i].Number }: Awaken = { beacons[i].isAwake }, IsHedge = { beacons[i].isHedge }, Firmware = { beacons[i].FirmwareVersion }");
-                            Console.WriteLine("Press any key...");
-                            Console.ReadKey();
-                            goto main_menu;
-                        }
-                    }
-                case 2:
-                    {
-                        Task newTask = Task.Run(async () => await Supermodem.GetFirmwareVersion(Connection));
-                        while (!newTask.IsCompleted) ;
-                        DrawMessage($"Modem version: { Supermodem.MajorVersion }.{ Supermodem.MinorVersion }", ref choice);
-                        goto main_menu;
-                    }
-                case 3:
-                    {
-                        Task newTask = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
-                        while (!newTask.IsCompleted) ;
-                        goto main_menu;
-                    }
-                case 4:
-                    {
-                        Connection.AllowDebug = true;
-                        DrawMessage("Press any key...", ref choice);
-                        Connection.AllowDebug = false;
-                        goto main_menu;
-                    }
-                case 5:
-                    {
-                        Network.AllowDebug = true;
-                        DrawMessage("Press any key...", ref choice);
-                        Network.AllowDebug = false;
-                        goto main_menu;
-                    }
-                case 6:
-                    {
-                wakeup_beacons:
-                        List<Beacon> sleepyBeacons = Supermodem.Beacons.FindAll(x => x.isAwake == false && x.Exists == true);
-                        if (sleepyBeacons.Count == 0)
-                        {
-                            DrawMessage("No beacons in sleep mode! Re-scan manually\nPress any key...", ref choice);
-                            goto main_menu;
-                        }
-                        else
-                        {
-                            Console.Clear();
-                            for (int i = 0; i < sleepyBeacons.Count; i++) Console.WriteLine($"{ sleepyBeacons[i].Number } : Hedge = { sleepyBeacons[i].isHedge }");
-                            Console.WriteLine("Select beacon address: ");
-                            choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
-                            if (choice != 255 && sleepyBeacons.Find(x => x.Number == choice) == null) goto wakeup_beacons;
-                            else
-                            {
-                                Task newTask;
-                                if (choice == 255)
-                                {
-                                    foreach (Beacon beacon in sleepyBeacons)
-                                    {
-                                        newTask = Task.Run(async () => await sleepyBeacons.Find(x => x.Number == choice).WakeUp(Connection));
-                                        while (!newTask.IsCompleted) ;
-                                    }
-                                }
-                                else newTask = Task.Run(async () => await sleepyBeacons.Find(x => x.Number == choice).WakeUp(Connection));
-                                goto main_menu;
-                            }
-                        }
-                    }
-                case 7:
-                    {
-                    sleep_beacons:
-                        List<Beacon> awakenBeacons = Supermodem.Beacons.FindAll(x => x.isAwake == true && x.Exists == true);
-                        if (awakenBeacons.Count == 0)
-                        {
-                            DrawMessage("No awaken beacons! Re-scan manually\nPress any key...", ref choice);
-                            goto main_menu;
-                        }
-                        else
-                        {
-                            Console.Clear();
-                            for (int i = 0; i < awakenBeacons.Count; i++) Console.WriteLine($"{ awakenBeacons[i].Number } : Hedge = { awakenBeacons[i].isHedge }");
-                            Console.WriteLine("Select beacon address: ");
-                            choice = Convert.ToInt32(Console.ReadKey().KeyChar - '0');
-                            if (awakenBeacons.Find(x => x.Number == choice) == null) goto sleep_beacons;
-                            else
-                            {
-                                Task newTask;
-                                if (choice == 255)
-                                {
-                                    foreach (Beacon beacon in awakenBeacons)
-                                    {
-                                        newTask = Task.Run(async () => await awakenBeacons.Find(x => x.Number == choice).Sleep(Connection));
-                                        while (!newTask.IsCompleted) ;
-                                    }
-                                }
-                                else newTask = Task.Run(async () => await awakenBeacons.Find(x => x.Number == choice).Sleep(Connection));
-                                goto main_menu;
-                            }
-                        }
-                    }
-                case 8:
-                    {
-                        Task newTask = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
-                        while (!newTask.IsCompleted) ;
-                        goto main_menu;
-                    }
-                case 9:
-                    {
-                        Connection.Close();
-                        goto rescan_comports;
-                    }
-                case 0:
-                    {
-                        Connection.Close();
-                        Network.Stop();
-                        GC.Collect();
-                        return;
-                    }
-                default:
-                    {
-                        DrawMessage("Unimplemented function\nPress any key...", ref choice);
-                        goto main_menu;
-                    }
-            }            
+                    
         }
         #endregion
     }

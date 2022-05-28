@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Runtime.Serialization;
 
 namespace MarvelousAPI
 {
@@ -47,18 +48,18 @@ namespace MarvelousAPI
     public struct CoordinatesStructure_cm
     {
         #region Public
-        public Int16 X;
-        public Int16 Y;
-        public Int16 Z;
+        public Int16 X { get; set; }
+        public Int16 Y { get; set; }
+        public Int16 Z { get; set; }
         #endregion
     }
 
     public struct CoordinatesStructure_mm
     {
         #region Public
-        public Int32 X;
-        public Int32 Y;
-        public Int32 Z;
+        public Int32 X { get; set; }
+        public Int32 Y { get; set; }
+        public Int32 Z { get; set; }
         #endregion
     }
 

@@ -56,7 +56,7 @@ namespace MarvelousAPI
                 Beacons.Add(new Beacon()
                 {
                     Coordinates_mm = new CoordinatesStructure_mm { X = 0, Y = 0, Z = 0 },
-                    Settings = new() { isAwake = false, isHedge = false, ID = i, FirmwareVersion = "0", RadioBand = 0, RadioProfile = 0, Submap = 0, UartBaud = 0 }
+                    Settings = new() { ID = i }
                 });
         }
         #endregion

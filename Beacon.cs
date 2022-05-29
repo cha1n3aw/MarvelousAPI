@@ -15,15 +15,20 @@ namespace MarvelousAPI
 
     public class BeaconSettings
     {
-        public byte ID { get; set; }
-        public bool isHedge { get; set; }
-        public bool isAwake { get; set; }
-        public string FirmwareVersion { get; set; }
-        public int UartBaud { get; set; }
-        public int RadioProfile { get; set; }
-        public int RadioBand { get; set; }
-        public int Submap { get; set; }
-        public bool Exists { get; set; }
+        public byte ID { get; set; } = 0;
+        public bool isHedge { get; set; } = false;
+        public bool isAwake { get; set; } = false;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public string FirmwareVersion { get; set; } = null;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int UartBaud { get; set; } = 0;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int RadioProfile { get; set; } = 0;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int RadioBand { get; set; } = 0;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int Submap { get; set; } = 0;
+        public bool Exists { get; set; } = false;
     }
     #endregion
 

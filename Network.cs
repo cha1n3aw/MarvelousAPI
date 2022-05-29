@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
 namespace MarvelousAPI
 {
@@ -13,56 +15,65 @@ namespace MarvelousAPI
         #region Public
         public delegate void UdpDataReceivedHandler(object sender, DataReceivedEventArgs e);
         public event UdpDataReceivedHandler OnDataReceived;
+        public ConcurrentDictionary<IPEndPoint, Pipe> EndpointsPipes;
         public bool AllowDebug = false;
         #endregion
         #region Private
-        private string RemoteAddress = string.Empty;
-        private int RemotePort = 0;
-        private int LocalPort = 0;
         private bool Run = false;
-        private Thread ReceiveThread;
         private UdpClient sender;
         #endregion
 
         #region Private
-        private void ReceiveData()
+        private async Task StartUdpListener(int port)
         {
-            UdpClient receiver = new(LocalPort);
-            IPEndPoint remoteIp = null;
+            EndpointsPipes = new();                                                     //Use a Dictionary to match packets from given connections to give Pipes
+            sender = new(new IPEndPoint(IPAddress.Any, port));
             while (Run)
             {
-                try
+                UdpReceiveResult result = await sender.ReceiveAsync();                  //Wait for some data to arrive
+                if (EndpointsPipes.ContainsKey(result.RemoteEndPoint))                  //If we have seen this IPEndpoint before send the traffic to the pipe
                 {
-                    byte[] data = receiver.Receive(ref remoteIp);
-                    string message = Encoding.Default.GetString(data);
-                    if (OnDataReceived != null)
-                    {
-                        DataReceivedEventArgs args = new(message, remoteIp);
-                        OnDataReceived(this, args);
-                    }
+                    EndpointsPipes.TryGetValue(result.RemoteEndPoint, out Pipe pipe);      
+                    await pipe.Writer.WriteAsync(result.Buffer);                        //the task associated with that Pipe will pick the traffic up
                 }
-                catch (Exception ex)
+                else                                                                    //If we have not seen it, make the pipe, stick the data in the pipe
                 {
-                    Console.WriteLine(ex.Message);
+                    Pipe pipe = new();
+                    EndpointsPipes.TryAdd(result.RemoteEndPoint, pipe);                    
+                    await pipe.Writer.WriteAsync(result.Buffer);                    
+                    _ = Task.Run(() => ProcessUdpPipes(result.RemoteEndPoint, pipe));   // and spin up a task to Read/Process the data
                 }
             }
-            receiver.Close();
-            GC.Collect();
         }
 
-        private void HiddenStart(string remoteAddress, int remotePort, int localPort)
+        private async Task ProcessUdpPipes(IPEndPoint endPoint, Pipe pipe)
         {
-            RemoteAddress = remoteAddress;
-            RemotePort = remotePort;
-            LocalPort = localPort;
-            sender = new UdpClient();
-            Run = true;
-            ReceiveThread = new Thread(new ThreadStart(ReceiveData));
-            ReceiveThread.Start();
-            while (ReceiveThread.ThreadState != ThreadState.Running) ;
+            while (Run)
+            {
+                ReadResult readResult = await pipe.Reader.ReadAsync();
+                string data = Encoding.ASCII.GetString(readResult.Buffer.FirstSpan.ToArray());
+                OnDataReceived?.Invoke(this, new DataReceivedEventArgs(data, endPoint));
+                pipe.Reader.AdvanceTo(readResult.Buffer.End);
+            }
         }
         #endregion
         #region Public
+        public void Send(string data, IPEndPoint endPoint)
+        {
+            if (Run)
+            {
+                try
+                {
+                    byte[] send_buffer = Encoding.ASCII.GetBytes(data);
+                    sender.Send(send_buffer, data.Length, endPoint);
+                }
+                catch (Exception ex)
+                {
+                    DebugWriteLine(ex.Message);
+                }
+            }
+        }
+
         public void DebugWriteLine(string data)
         {
             if (AllowDebug) Console.WriteLine(data);
@@ -77,19 +88,6 @@ namespace MarvelousAPI
             if (AllowDebug) Console.Write(data);
         }
 
-        public void Send(string data)
-        {
-            try
-            {
-                byte[] send_buffer = Encoding.ASCII.GetBytes(data);
-                sender.Send(send_buffer, data.Length, RemoteAddress, RemotePort);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-        }
-
         public class DataReceivedEventArgs : EventArgs
         {
             public string Message { get; private set; }
@@ -101,20 +99,15 @@ namespace MarvelousAPI
             }
         }
 
-        public void Start(string remoteAddress, int remotePort)
+        public void Start(int remotePort)
         {
-            HiddenStart(remoteAddress, remotePort, remotePort);
-        }
-
-        public void Start(string remoteAddress, int remotePort, int localPort)
-        {
-            HiddenStart(remoteAddress, remotePort, localPort);
+            Run = true;
+            _ = Task.Run(() => StartUdpListener(remotePort));
         }
 
         public void Stop()
         {
             Run = false;
-            while (ReceiveThread.ThreadState == ThreadState.Running) ;
             sender.Close();
             sender.Dispose();
             GC.Collect();

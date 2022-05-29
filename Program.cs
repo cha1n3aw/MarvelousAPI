@@ -1,7 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO.Pipelines;
 using System.IO.Ports;
 using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Security;
 using System.Threading.Tasks;
 
 namespace MarvelousAPI
@@ -362,20 +366,31 @@ namespace MarvelousAPI
         public static void ClientUdpDataReceived(object sender, Network.DataReceivedEventArgs e)
         {
             ClientUdpStream.DebugWriteLine($"{e.RemoteIP.Address} : {e.Message}");
-            dynamic method = Serializer.Deserialize(e.Message);
-            if (method?.GetType().ToString() == "MarvelousAPI.Beacon")
-                Supermodem.Beacons[Supermodem.Beacons.FindIndex(x => x.Settings.ID == ((Beacon)method).Settings.ID)] = (Beacon)method;
-            Console.WriteLine(Supermodem.Beacons[Supermodem.Beacons.FindIndex(x => x.Settings.ID == ((Beacon)method).Settings.ID)].Settings.RadioBand);
+            dynamic data = Serializer.Deserialize(e.Message);
+            if (data?.GetType().ToString() == "MarvelousAPI.Beacon")
+            {
+                foreach (PropertyInfo propertyInfo in Type.GetType("MarvelousAPI.BeaconSettings").GetProperties())
+                {
+                    try
+                    {
+                        object value = propertyInfo.GetValue(data.Settings);
+                        if (value != null) propertyInfo.SetValue(Supermodem.Beacons[Supermodem.Beacons.FindIndex(x => x.Settings.ID == ((Beacon)data).Settings.ID)].Settings, value);
+                    }
+                    catch (Exception) { }
+                }
+            }
         }
 
         public static void ModemUdpDataReceived(object sender, Network.DataReceivedEventArgs e)
         {
-            ModemUdpStream.DebugWriteLine($"{e.RemoteIP.Address} : {e.Message}");
-            int temp = (byte)e.Message[2];
-            temp = temp << 8;
-            temp += (byte)e.Message[3];
-            if (temp == 0x0011)
+            ModemUdpStream.DebugWriteLine($"Data received from: {e.RemoteIP.Address}");
+            int packgeType = e.Message[3];
+            packgeType = packgeType << 8;
+            packgeType += e.Message[2];
+            if (packgeType == 0x0011)
 			{
+                int id = (byte)e.Message[0];
+
                 int x = (byte)e.Message[12];
                 x = x << 8;
                 x += (byte)e.Message[11];
@@ -400,10 +415,15 @@ namespace MarvelousAPI
                 z = z << 8;
                 z += (byte)e.Message[9];
 
-                Supermodem.Beacons[(byte)e.Message[0]].Coordinates_mm = new CoordinatesStructure_mm { X = x, Y = y, Z = z};
-                ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[(byte)e.Message[0]]));
+                Supermodem.Beacons[id].Settings.Exists = true;
+                Supermodem.Beacons[id].Settings.isAwake = true;
+                Supermodem.Beacons[id].Settings.isHedge = true;
+                Supermodem.Beacons[id].Coordinates_mm = new CoordinatesStructure_mm { X = x, Y = y, Z = z};
+                foreach (KeyValuePair<IPEndPoint, Pipe> endPoint in ClientUdpStream.EndpointsPipes)
+                    ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[(byte)e.Message[0]]), endPoint.Key);
+                ModemUdpStream.DebugWriteLine(Serializer.Serialize(Supermodem.Beacons[(byte)e.Message[0]]));
             }
-            else if (temp == 0x0012)
+            else if (packgeType == 0x0012)
 			{
                 for (int i = 0; i < (byte)e.Message[5]; i++)
 				{
@@ -433,28 +453,35 @@ namespace MarvelousAPI
                     z = z << 8;
                     z += (byte)e.Message[6 + i * 14 + 9];
 
+                    Supermodem.Beacons[id].Settings.Exists = true;
+                    Supermodem.Beacons[id].Settings.isAwake = true;
+                    Supermodem.Beacons[id].Settings.isHedge = false;
                     Supermodem.Beacons[id].Coordinates_mm = new CoordinatesStructure_mm { X = x, Y = y, Z = z };
-                    ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[id]));
+                    foreach (KeyValuePair<IPEndPoint, Pipe> endPoint in ClientUdpStream.EndpointsPipes)
+                        ClientUdpStream.Send(Serializer.Serialize(Supermodem.Beacons[id]), endPoint.Key);
+                    ModemUdpStream.DebugWriteLine(Serializer.Serialize(Supermodem.Beacons[id]));
                 }
 			}
         }
 
         public static void Main(string[] args)
         {
+            Console.WriteLine($"=========================================================================");
+            Console.Write($"== Login: ");
+            string login = Console.ReadLine();
+            Console.Write("== Password: ");
+            SecureString password = GetPassword();
             int choice = -1;
             ClientUdpStream = new();
             Serializer = new();
             Supermodem = new();
             ClientUdpStream.OnDataReceived += new Network.UdpDataReceivedHandler(ClientUdpDataReceived);
-            ClientUdpStream.Start("127.0.0.1", 8002, 8001); //it allows to listen on a different port
-            //ClientUdpStream.AllowDebug = true;
-            //Console.ReadKey();
+            ClientUdpStream.Start(40000);
         select_connection_type:
             DrawMessage("Select connection type:\n1) COM\n2) UDP", ref choice);
             if (choice == 1)
             {
-        rescan_comports:
-                /*
+            rescan_comports:
                 if (Connection != null) Connection = null;
                 Connection = new();
                 Console.Clear();
@@ -476,10 +503,9 @@ namespace MarvelousAPI
                     Connection.Port.DiscardInBuffer();
                     Connection.Port.DiscardOutBuffer();
                 }
-                */
-            main_menu:
-                DrawMessage($"Main menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n4) Serial debugging\n5) UDP debugging\n6) Wake up beacons\n7) Sleep beacons\n8) Re-scan for available beacons\n9) Reselect COM port\n0) Exit", ref choice);
-                if (choice < 0 || choice > 9) goto main_menu;
+            main_menu_serial:
+                DrawMessage($"Main serial menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n4) Serial debugging\n5) UDP debugging\n6) Wake up beacons\n7) Sleep beacons\n8) Re-scan for available beacons\n9) Reselect COM port\n0) Change connection method", ref choice);
+                if (choice < 0 || choice > 9) goto main_menu_serial;
                 switch (choice)
                 {
                     case 1:
@@ -489,7 +515,7 @@ namespace MarvelousAPI
                             if (beacons.Count == 0)
                             {
                                 DrawMessage("No available beacons! Re-scan manually\nPress any key...", ref choice);
-                                goto main_menu;
+                                goto main_menu_serial;
                             }
                             else
                             {
@@ -497,7 +523,7 @@ namespace MarvelousAPI
                                     Console.WriteLine($"{ beacons[i].Settings.ID }: Awaken = { beacons[i].Settings.isAwake }, IsHedge = { beacons[i].Settings.isHedge }, Firmware = { beacons[i].Settings.FirmwareVersion }");
                                 Console.WriteLine("Press any key...");
                                 Console.ReadKey();
-                                goto main_menu;
+                                goto main_menu_serial;
                             }
                         }
                     case 2:
@@ -505,27 +531,27 @@ namespace MarvelousAPI
                             Task newTask = Task.Run(async () => await Supermodem.GetFirmwareVersion(Connection));
                             while (!newTask.IsCompleted) ;
                             DrawMessage($"Modem version: { Supermodem.Settings.MajorVersion }.{ Supermodem.Settings.MinorVersion }", ref choice);
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                     case 3:
                         {
                             Task newTask = Task.Run(async () => await Supermodem.GetLastCoordinates(Connection));
                             while (!newTask.IsCompleted) ;
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                     case 4:
                         {
                             Connection.AllowDebug = true;
                             DrawMessage("Press any key...", ref choice);
                             Connection.AllowDebug = false;
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                     case 5:
                         {
                             ClientUdpStream.AllowDebug = true;
                             DrawMessage("Press any key...", ref choice);
                             ClientUdpStream.AllowDebug = false;
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                     case 6:
                         {
@@ -534,7 +560,7 @@ namespace MarvelousAPI
                             if (sleepyBeacons.Count == 0)
                             {
                                 DrawMessage("No beacons in sleep mode! Re-scan manually\nPress any key...", ref choice);
-                                goto main_menu;
+                                goto main_menu_serial;
                             }
                             else
                             {
@@ -555,7 +581,7 @@ namespace MarvelousAPI
                                         }
                                     }
                                     else newTask = Task.Run(async () => await sleepyBeacons.Find(x => x.Settings.ID == choice).WakeUp(Connection));
-                                    goto main_menu;
+                                    goto main_menu_serial;
                                 }
                             }
                         }
@@ -566,7 +592,7 @@ namespace MarvelousAPI
                             if (awakenBeacons.Count == 0)
                             {
                                 DrawMessage("No awaken beacons! Re-scan manually\nPress any key...", ref choice);
-                                goto main_menu;
+                                goto main_menu_serial;
                             }
                             else
                             {
@@ -587,7 +613,7 @@ namespace MarvelousAPI
                                         }
                                     }
                                     else newTask = Task.Run(async () => await awakenBeacons.Find(x => x.Settings.ID == choice).Sleep(Connection));
-                                    goto main_menu;
+                                    goto main_menu_serial;
                                 }
                             }
                         }
@@ -595,7 +621,7 @@ namespace MarvelousAPI
                         {
                             Task newTask = Task.Run(async () => await Supermodem.GetAvailableBeacons(Connection, (byte)1));
                             while (!newTask.IsCompleted) ;
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                     case 9:
                         {
@@ -607,20 +633,87 @@ namespace MarvelousAPI
                             Connection.Close();
                             ClientUdpStream.Stop();
                             GC.Collect();
-                            return;
+                            goto select_connection_type;
                         }
                     default:
                         {
                             DrawMessage("Unimplemented function\nPress any key...", ref choice);
-                            goto main_menu;
+                            goto main_menu_serial;
                         }
                 }
             }
             else if (choice == 2)
             {
-                ClientUdpStream.Start("172.20.10.2", 49100); //it allows to listen on a different port
                 ModemUdpStream = new();
+                ModemUdpStream.Start(49100);
                 ModemUdpStream.OnDataReceived += new Network.UdpDataReceivedHandler(ModemUdpDataReceived);
+            main_menu_udp:
+                DrawMessage($"Main UDP menu:\n1) List all beacons\n2) Client UDP debug\n3) Modem UDP debug\n4) Full UDP debug\n5) List connected clients\n0) Change connection method", ref choice);
+                if (choice < 0 || choice > 9) goto main_menu_udp;
+                switch (choice)
+                {
+                    case 1:
+                        {
+                            Console.Clear();
+                            List<Beacon> beacons = Supermodem.Beacons.FindAll(x => x.Settings.Exists == true);
+                            if (beacons.Count == 0)
+                            {
+                                DrawMessage("No available beacons! Re-scan manually\nPress any key...", ref choice);
+                                goto main_menu_udp;
+                            }
+                            else
+                            {
+                                for (int i = 0; i < beacons.Count; i++)
+                                    Console.WriteLine($"{ beacons[i].Settings.ID }: Awaken = { beacons[i].Settings.isAwake }, IsHedge = { beacons[i].Settings.isHedge }, Firmware = { beacons[i].Settings.FirmwareVersion }");
+                                Console.WriteLine("Press any key...");
+                                Console.ReadKey();
+                                goto main_menu_udp;
+                            }
+                        }
+                    case 2:
+                        {
+                            Console.Clear();
+                            ClientUdpStream.AllowDebug = true;
+                            DrawMessage("Client UDP connection debug, press any key to exit...", ref choice);
+                            ClientUdpStream.AllowDebug = false;
+                            goto main_menu_udp;
+                        }
+                    case 3:
+                        {
+                            Console.Clear();
+                            ModemUdpStream.AllowDebug = true;
+                            DrawMessage("Modem UDP connection debug, press any key to exit...", ref choice);
+                            ModemUdpStream.AllowDebug = false;
+                            goto main_menu_udp;
+                        }
+                    case 4:
+                        {
+                            Console.Clear();
+                            ClientUdpStream.AllowDebug = true;
+                            ModemUdpStream.AllowDebug = true;
+                            DrawMessage("Client UDP connection debug, press any key to exit...", ref choice);
+                            ClientUdpStream.AllowDebug = false;
+                            ModemUdpStream.AllowDebug = false;
+                            goto main_menu_udp;
+                        }
+                    case 5:
+                        {
+                            Console.Clear();
+                            foreach (KeyValuePair<IPEndPoint, Pipe> keyValuePair in ClientUdpStream.EndpointsPipes)
+                                Console.WriteLine($"IP Address: { keyValuePair.Key.Address }, Port: { keyValuePair.Key.Port }");
+                            DrawMessage("Press any key to exit...", ref choice);
+                            goto main_menu_udp;
+                        }
+                    case 0:
+                        {
+                            goto select_connection_type;
+                        }
+                    default:
+                        {
+                            DrawMessage("Unimplemented function\nPress any key...", ref choice);
+                            goto main_menu_udp;
+                        }
+                }
             }
             else
             {
@@ -628,6 +721,31 @@ namespace MarvelousAPI
                 goto select_connection_type;
             }
                     
+        }
+        #endregion
+        #region Private
+        private static SecureString GetPassword()
+        {
+            SecureString password = new();
+            while (true)
+            {
+                ConsoleKeyInfo keyPressed = Console.ReadKey(true);
+                if (keyPressed.Key == ConsoleKey.Enter) break;
+                else if (keyPressed.Key == ConsoleKey.Backspace)
+                {
+                    if (password.Length > 0)
+                    {
+                        password.RemoveAt(password.Length - 1);
+                        Console.Write("\b \b");
+                    }
+                }
+                else if (!char.IsControl(keyPressed.KeyChar))
+                {
+                    password.AppendChar(keyPressed.KeyChar);
+                    Console.Write("*");
+                }
+            }
+            return password;
         }
         #endregion
     }

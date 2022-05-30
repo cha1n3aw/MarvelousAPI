@@ -466,11 +466,14 @@ namespace MarvelousAPI
 
         public static void Main(string[] args)
         {
+        bad_login:
             Console.WriteLine($"=========================================================================");
             Console.Write($"== Login: ");
             string login = Console.ReadLine();
             Console.Write("== Password: ");
             SecureString password = GetPassword();
+            Console.Clear();
+            if (login != "cha1n3aw" || new NetworkCredential("", password).Password != "qwerty") goto bad_login;
             int choice = -1;
             ClientUdpStream = new();
             Serializer = new();
@@ -478,10 +481,11 @@ namespace MarvelousAPI
             ClientUdpStream.OnDataReceived += new Network.UdpDataReceivedHandler(ClientUdpDataReceived);
             ClientUdpStream.Start(40000);
         select_connection_type:
-            DrawMessage("Select connection type:\n1) COM\n2) UDP", ref choice);
+            DrawMessage("Select connection type:\n1) UART (Serial)\n2) Wi-Fi (UDP)", ref choice);
             if (choice == 1)
             {
             rescan_comports:
+                /*
                 if (Connection != null) Connection = null;
                 Connection = new();
                 Console.Clear();
@@ -503,6 +507,7 @@ namespace MarvelousAPI
                     Connection.Port.DiscardInBuffer();
                     Connection.Port.DiscardOutBuffer();
                 }
+                */
             main_menu_serial:
                 DrawMessage($"Main serial menu:\n1) List all beacons\n2) Get modem firmware\n3) Get last coordinates\n4) Serial debugging\n5) UDP debugging\n6) Wake up beacons\n7) Sleep beacons\n8) Re-scan for available beacons\n9) Reselect COM port\n0) Change connection method", ref choice);
                 if (choice < 0 || choice > 9) goto main_menu_serial;
